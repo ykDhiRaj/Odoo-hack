@@ -27,6 +27,13 @@ import {
 import { Check, ChevronsUpDown, Loader2, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
+import bcrypt from "bcryptjs";
+import { createClient } from "@supabase/supabase-js";
+
+// Initialize Supabase client
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 interface Country {
     code: string;
@@ -59,6 +66,15 @@ const SignupPage = () => {
     const [visibleCount, setVisibleCount] = useState(ITEMS_PER_PAGE);
     const scrollRef = useRef<HTMLDivElement>(null);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
+    
+    // Form states
+    const [name, setName] = useState("");
+    const [email, setEmail] = useState("");
+    const [password, setPassword] = useState("");
+    const [confirmPassword, setConfirmPassword] = useState("");
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [submitError, setSubmitError] = useState<string | null>(null);
+    const [submitSuccess, setSubmitSuccess] = useState(false);
 
     useEffect(() => {
         fetchCountries();
@@ -110,12 +126,10 @@ const SignupPage = () => {
         }
     };
 
-    // Filter countries based on search query
     const filteredCountries = useMemo(() => {
         if (!searchQuery) {
             return displayedCountries;
         }
-        // When searching, show all matching countries
         return allCountries.filter((country) =>
             country.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
             country.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -123,7 +137,6 @@ const SignupPage = () => {
         );
     }, [allCountries, displayedCountries, searchQuery]);
 
-    // Handle scroll to load more countries
     const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
         const target = e.target as HTMLDivElement;
         const bottom = target.scrollHeight - target.scrollTop <= target.clientHeight + 50;
@@ -131,7 +144,6 @@ const SignupPage = () => {
         if (bottom && !isLoadingMore && !searchQuery && visibleCount < allCountries.length) {
             setIsLoadingMore(true);
 
-            // Simulate a slight delay for better UX
             setTimeout(() => {
                 const newCount = Math.min(visibleCount + ITEMS_PER_PAGE, allCountries.length);
                 setVisibleCount(newCount);
@@ -148,6 +160,67 @@ const SignupPage = () => {
         fetchCountries();
     };
 
+    const handleSubmit = async (e: React.MouseEvent<HTMLButtonElement>) => {
+        e.preventDefault();
+        setSubmitError(null);
+        setSubmitSuccess(false);
+
+        // Validation
+        if (!name || !email || !password || !confirmPassword || !selectedCountry) {
+            setSubmitError("Please fill in all fields");
+            return;
+        }
+
+        if (password !== confirmPassword) {
+            setSubmitError("Passwords do not match");
+            return;
+        }
+
+        if (password.length < 6) {
+            setSubmitError("Password must be at least 6 characters long");
+            return;
+        }
+
+        setIsSubmitting(true);
+
+        try {
+            // Hash the password using bcrypt
+            const saltRounds = 10;
+            const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+            // Insert user data into Supabase
+            const { data, error: supabaseError } = await supabase
+                .from('admin(company)')
+                .insert([
+                    {
+                        name: name,
+                        email: email,
+                        password: hashedPassword,
+                        country: selectedCountry
+                    }
+                ])
+                .select();
+
+            if (supabaseError) {
+                throw supabaseError;
+            }
+
+            setSubmitSuccess(true);
+            // Reset form
+            setName("");
+            setEmail("");
+            setPassword("");
+            setConfirmPassword("");
+            setSelectedCountry("");
+            
+        } catch (err: any) {
+            console.error("Error creating account:", err);
+            setSubmitError(err.message || "Failed to create account. Please try again.");
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
     return (
         <div className="flex justify-center items-center min-h-screen bg-gray-50">
             <Card className="w-[400px]">
@@ -158,15 +231,38 @@ const SignupPage = () => {
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <form>
+                    <div>
                         <div className="grid w-full items-center gap-4">
+                            {submitError && (
+                                <div className="flex items-center gap-2 text-xs text-red-600 bg-red-50 p-2 rounded">
+                                    <AlertCircle className="h-3 w-3" />
+                                    <span>{submitError}</span>
+                                </div>
+                            )}
+                            {submitSuccess && (
+                                <div className="flex items-center gap-2 text-xs text-green-600 bg-green-50 p-2 rounded">
+                                    <Check className="h-3 w-3" />
+                                    <span>Account created successfully!</span>
+                                </div>
+                            )}
                             <div className="flex flex-col space-y-1.5">
                                 <Label htmlFor="name">Name</Label>
-                                <Input id="name" placeholder="Enter your name" />
+                                <Input 
+                                    id="name" 
+                                    placeholder="Enter your name" 
+                                    value={name}
+                                    onChange={(e) => setName(e.target.value)}
+                                />
                             </div>
                             <div className="flex flex-col space-y-1.5">
                                 <Label htmlFor="email">Email</Label>
-                                <Input id="email" placeholder="Enter your email" type="email" />
+                                <Input 
+                                    id="email" 
+                                    placeholder="Enter your email" 
+                                    type="email"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                />
                             </div>
                             <div className="flex flex-col space-y-1.5">
                                 <Label htmlFor="password">Password</Label>
@@ -174,6 +270,8 @@ const SignupPage = () => {
                                     id="password"
                                     placeholder="Enter your password"
                                     type="password"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
                                 />
                             </div>
                             <div className="flex flex-col space-y-1.5">
@@ -182,6 +280,8 @@ const SignupPage = () => {
                                     id="confirm-password"
                                     placeholder="Confirm your password"
                                     type="password"
+                                    value={confirmPassword}
+                                    onChange={(e) => setConfirmPassword(e.target.value)}
                                 />
                             </div>
                             <div className="flex flex-col space-y-1.5">
@@ -289,11 +389,22 @@ const SignupPage = () => {
                                 </Popover>
                             </div>
                         </div>
-                    </form>
+                    </div>
                 </CardContent>
                 <CardFooter className="flex flex-col gap-4 pt-6">
-                    <Button className="w-full h-11 text-base font-semibold">
-                        Create Account
+                    <Button 
+                        className="w-full h-11 text-base font-semibold"
+                        onClick={handleSubmit}
+                        disabled={isSubmitting}
+                    >
+                        {isSubmitting ? (
+                            <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Creating Account...
+                            </>
+                        ) : (
+                            "Create Account"
+                        )}
                     </Button>
                     <div className="relative">
                         <div className="absolute inset-0 flex items-center">
