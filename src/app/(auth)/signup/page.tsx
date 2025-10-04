@@ -27,13 +27,7 @@ import {
 import { Check, ChevronsUpDown, Loader2, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
-import bcrypt from "bcryptjs";
-import { createClient } from "@supabase/supabase-js";
 
-// Initialize Supabase client
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 interface Country {
     code: string;
@@ -66,7 +60,7 @@ const SignupPage = () => {
     const [visibleCount, setVisibleCount] = useState(ITEMS_PER_PAGE);
     const scrollRef = useRef<HTMLDivElement>(null);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
-    
+
     // Form states
     const [name, setName] = useState("");
     const [email, setEmail] = useState("");
@@ -184,25 +178,47 @@ const SignupPage = () => {
         setIsSubmitting(true);
 
         try {
-            // Hash the password using bcrypt
-            const saltRounds = 10;
-            const hashedPassword = await bcrypt.hash(password, saltRounds);
+            const selectedCountryData = allCountries.find(c => c.code === selectedCountry);
 
-            // Insert user data into Supabase
-            const { data, error: supabaseError } = await supabase
-                .from('admin(company)')
-                .insert([
-                    {
-                        name: name,
-                        email: email,
-                        password: hashedPassword,
-                        country: selectedCountry
-                    }
-                ])
-                .select();
+            // First create company
+            const companyResponse = await fetch('/api/companies', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    name: `${name}'s Company`,
+                    country: selectedCountryData?.name || selectedCountry,
+                    currency: selectedCountryData?.currency || 'USD',
+                }),
+            });
 
-            if (supabaseError) {
-                throw supabaseError;
+            const companyData = await companyResponse.json();
+
+            if (!companyResponse.ok) {
+                throw new Error(companyData.error || 'Failed to create company');
+            }
+
+            // Then create user as admin
+            const userResponse = await fetch('/api/auth/signup', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    email,
+                    password,
+                    firstName: name.split(' ')[0] || name,
+                    lastName: name.split(' ').slice(1).join(' ') || '',
+                    companyId: companyData.company.id,
+                    role: 'admin',
+                }),
+            });
+
+            const userData = await userResponse.json();
+
+            if (!userResponse.ok) {
+                throw new Error(userData.error || 'Failed to create user');
             }
 
             setSubmitSuccess(true);
@@ -212,10 +228,11 @@ const SignupPage = () => {
             setPassword("");
             setConfirmPassword("");
             setSelectedCountry("");
-            
-        } catch (err: any) {
+
+        } catch (err: unknown) {
             console.error("Error creating account:", err);
-            setSubmitError(err.message || "Failed to create account. Please try again.");
+            const errorMessage = err instanceof Error ? err.message : "Failed to create account. Please try again.";
+            setSubmitError(errorMessage);
         } finally {
             setIsSubmitting(false);
         }
@@ -247,18 +264,18 @@ const SignupPage = () => {
                             )}
                             <div className="flex flex-col space-y-1.5">
                                 <Label htmlFor="name">Name</Label>
-                                <Input 
-                                    id="name" 
-                                    placeholder="Enter your name" 
+                                <Input
+                                    id="name"
+                                    placeholder="Enter your name"
                                     value={name}
                                     onChange={(e) => setName(e.target.value)}
                                 />
                             </div>
                             <div className="flex flex-col space-y-1.5">
                                 <Label htmlFor="email">Email</Label>
-                                <Input 
-                                    id="email" 
-                                    placeholder="Enter your email" 
+                                <Input
+                                    id="email"
+                                    placeholder="Enter your email"
                                     type="email"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
@@ -392,7 +409,7 @@ const SignupPage = () => {
                     </div>
                 </CardContent>
                 <CardFooter className="flex flex-col gap-4 pt-6">
-                    <Button 
+                    <Button
                         className="w-full h-11 text-base font-semibold"
                         onClick={handleSubmit}
                         disabled={isSubmitting}

@@ -178,34 +178,100 @@ const SubmitExpense = () => {
         }
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [submitError, setSubmitError] = useState<string | null>(null);
+    const [categories, setCategories] = useState<Array<{id: number, name: string}>>([]);
+
+    // Fetch expense categories
+    useEffect(() => {
+        const fetchCategories = async () => {
+            try {
+                const user = JSON.parse(localStorage.getItem('user') || '{}');
+                if (!user.companyId) return;
+
+                const response = await fetch(`/api/expense-categories?companyId=${user.companyId}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    setCategories(data.categories);
+                }
+            } catch (error) {
+                console.error('Error fetching categories:', error);
+            }
+        };
+
+        fetchCategories();
+    }, []);
+
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        setSubmitError(null);
 
         // Basic validation
         if (!formData.amount || !formData.currency || !formData.category || !formData.date || !formData.description) {
-            alert("Please fill in all required fields");
+            setSubmitError("Please fill in all required fields");
             return;
         }
 
-        // Log form data to console
-        console.log("Expense submitted:", {
-            ...formData,
-            amount: parseFloat(formData.amount),
-            date: new Date(formData.date),
-        });
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        if (!user.id || !user.companyId) {
+            setSubmitError("User information not found. Please login again.");
+            return;
+        }
 
-        // Reset form
-        setFormData({
-            amount: "",
-            currency: "",
-            category: "",
-            date: "",
-            description: "",
-            receipt: null,
-        });
-        setReceiptPreview(null);
+        setIsSubmitting(true);
 
-        alert("Expense submitted successfully!");
+        try {
+            // Upload receipt if provided
+            let receiptUrl = null;
+            if (formData.receipt) {
+                // In a real app, you'd upload to a file storage service
+                // For now, we'll just create a placeholder URL
+                receiptUrl = `receipts/${Date.now()}_${formData.receipt.name}`;
+            }
+
+            const response = await fetch('/api/expenses', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    employeeId: user.id,
+                    companyId: user.companyId,
+                    categoryId: parseInt(formData.category),
+                    amount: parseFloat(formData.amount),
+                    currency: formData.currency,
+                    description: formData.description,
+                    expenseDate: formData.date,
+                    receiptUrl,
+                }),
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to submit expense');
+            }
+
+            // Reset form
+            setFormData({
+                amount: "",
+                currency: "",
+                category: "",
+                date: "",
+                description: "",
+                receipt: null,
+            });
+            setReceiptPreview(null);
+            setSelectedCurrency("");
+
+            alert("Expense submitted successfully!");
+
+        } catch (error) {
+            console.error('Error submitting expense:', error);
+            setSubmitError(error instanceof Error ? error.message : 'Failed to submit expense');
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     return (
@@ -348,11 +414,14 @@ const SubmitExpense = () => {
                                         <SelectValue placeholder="Select category" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="Travel">Travel</SelectItem>
-                                        <SelectItem value="Meals">Meals</SelectItem>
-                                        <SelectItem value="Office Supplies">Office Supplies</SelectItem>
-                                        <SelectItem value="Software">Software</SelectItem>
-                                        <SelectItem value="Other">Other</SelectItem>
+                                        {categories.map((category) => (
+                                            <SelectItem key={category.id} value={category.id.toString()}>
+                                                {category.name}
+                                            </SelectItem>
+                                        ))}
+                                        {categories.length === 0 && (
+                                            <SelectItem value="1">Travel</SelectItem>
+                                        )}
                                     </SelectContent>
                                 </Select>
                             </div>
@@ -402,8 +471,22 @@ const SubmitExpense = () => {
                             )}
                         </div>
 
-                        <Button type="submit" className="w-full">
-                            Submit Expense
+                        {submitError && (
+                            <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 p-3 rounded">
+                                <AlertCircle className="h-4 w-4" />
+                                <span>{submitError}</span>
+                            </div>
+                        )}
+
+                        <Button type="submit" className="w-full" disabled={isSubmitting}>
+                            {isSubmitting ? (
+                                <>
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    Submitting...
+                                </>
+                            ) : (
+                                "Submit Expense"
+                            )}
                         </Button>
                     </form>
                 </CardContent>

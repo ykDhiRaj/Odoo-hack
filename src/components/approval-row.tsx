@@ -32,11 +32,18 @@ export const ApprovalRow = ({ approval, onApprovalUpdate }: ApprovalRowProps) =>
 
   return (
     <tr className={`border-b hover:bg-gray-50 ${isReadOnly ? 'opacity-60' : ''}`}>
-      <td className="p-3">{approval.subject}</td>
+      <td className="p-3">
+        <div className="max-w-xs truncate" title={approval.subject}>
+          {approval.subject}
+        </div>
+      </td>
       <td className="p-3">{approval.owner}</td>
       <td className="p-3">{approval.category}</td>
+      <td className="p-3 font-semibold">${approval.amount.toFixed(2)}</td>
+      <td className="p-3 text-sm text-gray-600">
+        {new Date(approval.expenseDate || approval.submittedAt).toLocaleDateString()}
+      </td>
       <td className="p-3">{getStatusBadge(approval.status)}</td>
-      <td className="p-3">${approval.amount.toFixed(2)}</td>
       <td className="p-3">
         <div className="flex gap-2">
           {!isReadOnly && (
