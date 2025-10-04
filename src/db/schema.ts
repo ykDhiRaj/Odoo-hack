@@ -212,5 +212,9 @@ export const db = drizzle(client, {
     companies,
     expenseCategories,
     expenses,
+    approvalRules,
+    approvalSteps,
+    expenseApprovals,
+    auditLogs,
   },
 });

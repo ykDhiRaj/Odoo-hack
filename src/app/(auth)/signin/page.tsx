@@ -14,14 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { Loader2, AlertCircle, Check } from "lucide-react";
-import bcrypt from "bcryptjs";
-import { createClient } from "@supabase/supabase-js";
 import { useRouter } from "next/navigation";
-
-// Initialize Supabase client
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 const SigninPage = () => {
     const router = useRouter();
@@ -45,58 +38,43 @@ const SigninPage = () => {
         setIsSubmitting(true);
 
         try {
-            // Fetch user from Supabase by email
-            const { data: users, error: fetchError } = await supabase
-                .from('admin(company)')
-                .select('*')
-                .eq('email', email)
-                .limit(1);
+            const response = await fetch('/api/auth/signin', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ email, password }),
+            });
 
-            if (fetchError) {
-                throw fetchError;
-            }
+            const data = await response.json();
 
-            // Check if user exists
-            if (!users || users.length === 0) {
-                setError("Invalid email or password");
-                setIsSubmitting(false);
+            if (!response.ok) {
+                setError(data.error || "Failed to sign in");
                 return;
             }
 
-            const user = users[0];
-
-            // Compare password with hashed password using bcrypt
-            const isPasswordValid = await bcrypt.compare(password, user.password);
-
-            if (!isPasswordValid) {
-                setError("Invalid email or password");
-                setIsSubmitting(false);
-                return;
-            }
-
-            // Success - you can store user data in localStorage or context
+            // Success - store user data in localStorage
             setSuccess(true);
-            
-            // Store user info (excluding password) in localStorage
-            const userInfo = {
-                id: user.id,
-                name: user.name,
-                email: user.email,
-                country: user.country
-            };
-            
+
             if (typeof window !== 'undefined') {
-                localStorage.setItem('user', JSON.stringify(userInfo));
+                localStorage.setItem('user', JSON.stringify(data.user));
             }
 
-            // Redirect to dashboard or home page after successful login
+            // Redirect based on user role
             setTimeout(() => {
-                router.push('/dashboard'); // Change this to your desired route
+                const role = data.user.role;
+                if (role === 'admin') {
+                    router.push('/admin/dashboard');
+                } else if (role === 'manager') {
+                    router.push('/manager/dashboard');
+                } else {
+                    router.push('/employee/dashboard');
+                }
             }, 1500);
 
-        } catch (err: any) {
+        } catch (err) {
             console.error("Error signing in:", err);
-            setError(err.message || "Failed to sign in. Please try again.");
+            setError("Failed to sign in. Please try again.");
         } finally {
             setIsSubmitting(false);
         }
@@ -128,8 +106,8 @@ const SigninPage = () => {
                             )}
                             <div className="flex flex-col space-y-1.5">
                                 <Label htmlFor="email">Email</Label>
-                                <Input 
-                                    id="email" 
+                                <Input
+                                    id="email"
                                     placeholder="Enter your email"
                                     type="email"
                                     value={email}
@@ -148,7 +126,7 @@ const SigninPage = () => {
                                     disabled={isSubmitting}
                                     onKeyDown={(e) => {
                                         if (e.key === 'Enter') {
-                                            handleSubmit(e as any);
+                                            handleSubmit(e as unknown as React.MouseEvent<HTMLButtonElement>);
                                         }
                                     }}
                                 />
@@ -157,7 +135,7 @@ const SigninPage = () => {
                     </div>
                 </CardContent>
                 <CardFooter className="flex flex-col gap-4 pt-6">
-                    <Button 
+                    <Button
                         className="w-full h-11 text-base font-semibold"
                         onClick={handleSubmit}
                         disabled={isSubmitting}
